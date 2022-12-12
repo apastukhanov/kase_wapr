@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta, date
-from typing import List
+from datetime import datetime, timedelta
+from typing import List, Tuple
 
 import logging
 
@@ -10,6 +10,7 @@ import sqlite3
 import pandas as pd
 import numpy as np
 import requests
+from xlrd.sheet import Sheet
 
 from config import (WAPR_URL_TEMPLATE, 
                     REQUEST_HEADERS, 
@@ -34,13 +35,13 @@ def connect_to_kase(url: str, excel_path: Path) -> None:
         f.write(r.content)
 
 
-def create_short_date(date: datetime):
+def create_short_date(date: datetime) -> str:
     year = date.year - 2000
     td = date.strftime("%d%m") + str(year)
     return td
     
 
-def download_wapr(tradedate: datetime):
+def download_wapr(tradedate: datetime) -> None:
     td = create_short_date(tradedate)
     url = WAPR_URL_TEMPLATE.format(td)
     connect_to_kase(url, Path(BASE_EXCEL_WAPR_PATH.format(td)))
@@ -60,7 +61,6 @@ def read_excel_file(tradedate: datetime):
 
 
 def parse_all_tables_from_xls_file(filepath: str) -> List[pd.DataFrame]:
-
     all_df = []
     
     f = pd.ExcelFile(filepath)
@@ -86,8 +86,8 @@ def parse_all_tables_from_xls_file(filepath: str) -> List[pd.DataFrame]:
     return all_df
 
 
-def parse_cols_on_sheet(sheet, start_row: int, 
-                        end_row: int, last_col: int):
+def parse_cols_on_sheet(sheet: Sheet, start_row: int, 
+                        end_row: int, last_col: int) -> List[str]:
     cols = []
     for j in range(min(last_col+1, sheet.ncols)):
         col_name = []
@@ -99,7 +99,7 @@ def parse_cols_on_sheet(sheet, start_row: int,
     return cols
 
 
-def find_bouders_of_table_header(sheet):
+def find_bouders_of_table_header(sheet: Sheet) -> Tuple[int, int, int]:
     start = -1
     end = -1
     for i in range(min(20, sheet.nrows)):
@@ -125,21 +125,24 @@ def save_wapr_to_csv_db(df:pd.DataFrame,
     df.to_csv(file, index=False)
     
 
-def save_wapr_to_sql(df):
+def save_wapr_to_sql(df: pd.DataFrame) -> None:
     with sqlite3.connect(DB_WAPR_PATH) as conn:
         df['updated_time'] = datetime.now()
         df.to_sql('WAPR', conn, if_exists='append', index=False)
     
      
-def main(tradedate: datetime):
+def main(tradedate: datetime) -> None:
     df = read_excel_file(tradedate)
-    print(df.head())
+    logger.info(df.head())
     save_wapr_to_csv_db(df, tradedate)
     save_wapr_to_sql(df)
     
 
 if __name__ == "__main__":
     d = datetime.now()
-    bod = datetime(d.year, d.month, d.day)
-    # main(bod - timedelta(days=1))
-    main(datetime(2022,12,7))
+    bod = datetime(d.year, d.month, d.day-2)
+    logger.info((bod-timedelta(3)).weekday())
+    days_count = (bod.weekday() - 4) if bod.weekday() in [5, 6, 0] else 1
+    days_count = 3 if days_count < 0 else days_count
+    main(bod - timedelta(days=days_count))
+    # main(datetime(2022,12,7))
